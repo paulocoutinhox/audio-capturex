@@ -1,0 +1,91 @@
+name: Build
+
+on:
+  push:
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - 'extras/images/**'
+
+jobs:
+  build:
+    name: Build on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install CMake
+        uses: jwlawson/actions-setup-cmake@v2
+        with:
+          cmake-version: "3.31.8"
+
+      - name: Install Ninja (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        uses: seanmiddleditch/gha-setup-ninja@master
+        with:
+          version: "1.10.0"
+
+      - name: Install dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config libpulse-dev libasound2-dev libjack-dev
+
+      - name: Install dependencies (macOS)
+        if: matrix.os == 'macos-latest'
+        run: |
+          brew uninstall cmake || true
+          brew install cmake ninja
+
+      - name: Create build directory
+        run: mkdir -p build
+
+      - name: Configure CMake (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: build
+        run: cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=Release
+
+      - name: Configure CMake (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        working-directory: build
+        run: cmake .. -G "Ninja" -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        working-directory: build
+        run: cmake --build . --config Release
+
+      - name: Build (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        working-directory: build
+        run: cmake --build .
+
+      - name: Create artifacts directory
+        run: |
+          mkdir -p artifacts/bin
+          mkdir -p artifacts/lib
+
+      - name: Copy binaries (Linux/macOS)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cp -r build/bin/* artifacts/bin/ 2>/dev/null || true
+          cp -r build/lib/* artifacts/lib/ 2>/dev/null || true
+
+      - name: Copy binaries (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          xcopy /E /I build\bin\Release\* artifacts\bin\ 2>nul || echo "No bin files to copy"
+          xcopy /E /I build\lib\Release\* artifacts\lib\ 2>nul || echo "No lib files to copy"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: audio-capturex-${{ matrix.os }}
+          path: artifacts/
+          retention-days: 30
